@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strapi-production
+  labels:
+    app: strapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: strapi
+  template:
+    metadata:
+      labels:
+        app: strapi
+    spec:
+      containers:
+        - name: strapi
+          image: strapi/strapi
+          ports:
+            - containerPort: 1337
+          envFrom:
+            - configMapRef:
+                name: strapi-config
+            - secretRef:
+                name: strapi-secret
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /admin
+              port: 1337
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /admin
+              port: 1337
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          volumeMounts:
+            - name: uploads
+              mountPath: /opt/app/public/uploads
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: strapi-uploads-pvc

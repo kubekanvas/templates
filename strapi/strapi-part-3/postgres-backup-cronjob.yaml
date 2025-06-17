@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: default
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: postgres-backup
+            image: postgres:14
+            env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: strapi-secret
+                  key: DATABASE_PASSWORD
+            command:
+            - /bin/bash
+            - -c
+            - |
+              pg_dump -h postgres -U strapi strapi > /backup/backup-$(date +%Y%m%d-%H%M%S).sql
+              # Keep only last 7 days of backups
+              find /backup -name "backup-*.sql" -mtime +7 -delete
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: postgres-backup-pvc
+          restartPolicy: OnFailure

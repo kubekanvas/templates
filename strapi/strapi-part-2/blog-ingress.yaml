@@ -1,0 +1,36 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: blog-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          # Strapi admin interface
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: strapi
+                port:
+                  number: 1337
+          # Strapi API endpoints
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: strapi
+                port:
+                  number: 1337
+          # Next.js frontend (catch-all)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: blog-frontend
+                port:
+                  number: 3000
