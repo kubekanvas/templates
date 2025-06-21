@@ -14,21 +14,22 @@ spec:
     spec:
       containers:
         - name: strapi
-          image: strapi/strapi
+          image: wofet86855/strapi
           ports:
             - containerPort: 1337
-          env:
-            - name: DATABASE_CLIENT
-              value: postgres
-            - name: DATABASE_NAME
-              value: strapi
-            - name: DATABASE_HOST
-              value: postgres
-            - name: DATABASE_PORT
-              value: "5432"
-            - name: DATABASE_USERNAME
-              value: strapi
-            - name: DATABASE_PASSWORD
-              value: strapi123
-            - name: NODE_ENV
-              value: production
+          
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: strapi-service
+  labels:
+    app: strapi
+spec:
+  selector:
+    app: strapi
+  ports:
+    - port: 1337
+      targetPort: 1337
+  type: ClusterIP

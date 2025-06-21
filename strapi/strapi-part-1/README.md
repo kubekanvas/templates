@@ -4,35 +4,28 @@ This directory contains all the Kubernetes YAML files needed for Part 1 of the S
 
 ## Files Overview
 
-- `postgres-pvc.yaml` - PersistentVolumeClaim for PostgreSQL data storage
-- `postgres-deployment.yaml` - PostgreSQL database deployment
-- `postgres-service.yaml` - PostgreSQL service for internal connectivity
 - `strapi-deployment.yaml` - Strapi CMS deployment with database connection
 - `strapi-service.yaml` - Strapi service for internal connectivity
-- `strapi-ingress.yaml` - Ingress to expose Strapi publicly
 
 ## Deployment Order
 
 Apply the files in this order:
 
 ```bash
-# 1. Create persistent storage for PostgreSQL
-kubectl apply -f postgres-pvc.yaml
+# 1. Build docker image
+docker build -t my-strapi-blog:latest .
 
-# 2. Deploy PostgreSQL database
-kubectl apply -f postgres-deployment.yaml
+# 2. Run the container locally
+docker run -p 1337:1337 my-strapi-blog:latest
 
-# 3. Create PostgreSQL service
-kubectl apply -f postgres-service.yaml
-
-# 4. Deploy Strapi CMS
+# 3. Deploy Strapi CMS
 kubectl apply -f strapi-deployment.yaml
 
-# 5. Create Strapi service
+# 4. Create Strapi service
 kubectl apply -f strapi-service.yaml
 
-# 6. Create Ingress for external access
-kubectl apply -f strapi-ingress.yaml
+# 5. Port-forward to access the application from browser
+kubectl port-forward service/strapi-service 1337:1337
 ```
 
 ## Quick Deploy
@@ -63,11 +56,10 @@ kubectl logs -l app=strapi
 
 ## Access
 
-- **Strapi Admin**: `http://<ingress-ip>/admin`
-- **Port Forward**: `kubectl port-forward service/strapi 1337:1337`
+- **Strapi Admin**: `http://localhost:1337/admin`
+- **Port Forward**: `kubectl port-forward service/strapi-service 1337:1337`
 
 ## Prerequisites
 
-- Kubernetes cluster with Ingress controller enabled
-- Default storage class configured
+- Local Kubernetes Cluster
 - kubectl configured to access your cluster
