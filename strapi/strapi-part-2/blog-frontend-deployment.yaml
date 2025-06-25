@@ -2,8 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: blog-frontend
-  labels:
-    app: blog-frontend
 spec:
   replicas: 1
   selector:
@@ -19,28 +17,3 @@ spec:
           image: yourdockerhub/nextjs-blog:latest
           ports:
             - containerPort: 3000
-              protocol: TCP
-          env:
-            - name: STRAPI_URL
-              value: http://strapi:1337/graphql
-            - name: NODE_ENV
-              value: production
-          resources:
-            requests:
-              memory: "256Mi"
-              cpu: "100m"
-            limits:
-              memory: "512Mi"
-              cpu: "250m"
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 3000
-            initialDelaySeconds: 10
-            periodSeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 3000
-            initialDelaySeconds: 30
-            periodSeconds: 10

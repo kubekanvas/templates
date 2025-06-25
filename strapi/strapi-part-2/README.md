@@ -87,8 +87,6 @@ curl -H "Host: yourdomain.com" http://$INGRESS_IP/
 # Test Strapi admin
 curl -H "Host: yourdomain.com" http://$INGRESS_IP/admin
 
-# Test Strapi API
-curl -H "Host: yourdomain.com" http://$INGRESS_IP/api/articles
 ```
 
 ## Port Forwarding (for local testing)
@@ -108,7 +106,6 @@ kubectl port-forward service/strapi 1337:1337
 After deployment:
 - **Blog Frontend**: `http://<ingress-ip>/`
 - **Strapi Admin**: `http://<ingress-ip>/admin`
-- **Strapi API**: `http://<ingress-ip>/api`
 
 ## Sample Next.js Integration
 

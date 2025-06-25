@@ -1,3 +1,4 @@
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,10 +15,10 @@ spec:
     spec:
       containers:
         - name: strapi
-          image: wofet86855/strapi
+          image: my-strapi-blog:latest # can be replaced with wofet86855/strapi 
+          imagePullPolicy: Never
           ports:
             - containerPort: 1337
-
 ---
 apiVersion: v1
 kind: Service
