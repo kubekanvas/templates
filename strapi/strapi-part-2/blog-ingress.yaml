@@ -4,7 +4,6 @@ metadata:
   name: blog-ingress
   annotations:
     nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   ingressClassName: nginx
   rules:
@@ -15,7 +14,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: strapi
+                name: strapi-service
                 port:
                   number: 1337
           # Next.js frontend (catch-all)
@@ -23,6 +22,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: blog-frontend
+                name: frontend-service
                 port:
                   number: 3000
