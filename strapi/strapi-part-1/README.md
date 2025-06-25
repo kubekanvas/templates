@@ -1,5 +1,7 @@
 # Strapi Blog Platform - Part 1
 
+> **Related Article**: This code accompanies the tutorial "[Building a Modern Blog with Strapi and Kubernetes: Your First CMS in the Cloud](https://www.kubekanvas.io/blog/building-a-modern-blog-with-strapi-and-kubernetes-your-first-cms-in-the-cloud)" published on KubeKanvas.io. The article provides a comprehensive guide to deploying a modern headless CMS using Strapi on Kubernetes, covering everything from containerization to production-ready deployments with persistent storage, ingress routing, and scalability considerations.
+
 This directory contains all the Kubernetes YAML files needed for Part 1 of the Strapi blog platform tutorial.
 
 ## Files Overview

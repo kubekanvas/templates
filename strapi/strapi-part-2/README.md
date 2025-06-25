@@ -1,5 +1,7 @@
 # Strapi Blog Platform - Part 2
 
+> **Related Article**: This code accompanies the tutorial "[Building and Deploying a Modern Blog Platform with Next.js, Strapi, and Kubernetes - Part 2: Adding the Frontend](https://www.kubekanvas.io/blog/building-and-deploying-a-modern-blog-platform-with-next-js-strapi-and-kubernetes-part-2-adding-the-frontend)" published on KubeKanvas.io. This article extends the Part 1 deployment by adding a Next.js frontend, implementing advanced ingress routing for both frontend and backend services, and demonstrating how to create a complete full-stack application on Kubernetes.
+
 This directory contains all the Kubernetes YAML files and Docker configuration needed for Part 2 of the Strapi blog platform tutorial.
 
 ## Files Overview
