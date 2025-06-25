@@ -6,8 +6,8 @@ This repository contains all the Kubernetes YAML files and configurations needed
 
 This repository accompanies a 3-part tutorial series:
 
-1. **Part 1**: Deploying Strapi CMS in Kubernetes and expose it using service. View the deployed instance using port-forwarding
-2. **Part 2**: Adding Next.js Frontend with Ingress Routing to provide a beautiful read only blog view to the customers.
+1. **Part 1**: [Deploying Strapi CMS in Kubernetes and expose it using service. View the deployed instance using port-forwarding](https://www.kubekanvas.io/blog/building-a-modern-blog-with-strapi-and-kubernetes-your-first-cms-in-the-cloud)
+2. **Part 2**: [Adding Next.js Frontend with Ingress Routing to provide a beautiful read only blog view to the customers]](https://www.kubekanvas.io/blog/building-and-deploying-a-modern-blog-platform-with-next-js-strapi-and-kubernetes-part-2-adding-the-frontend).
 3. **Part 3**: Adding Postgresql to persist data in strapi and use of AWS S3 to save the media files.
 
 ## 🚀 Quick Start
