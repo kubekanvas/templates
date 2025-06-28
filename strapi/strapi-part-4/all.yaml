@@ -1,0 +1,579 @@
+# All Advanced Kubernetes manifests for Strapi + Next.js Blog Platform - Part 4
+# This file contains all the advanced production-ready YAML resources from Part 4
+# Apply with: kubectl apply -f all.yaml
+
+---
+
+# Network Policies for Security
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: strapi-network-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: strapi
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from Next.js frontend
+  - from:
+    - podSelector:
+        matchLabels:
+          app: blog-frontend
+    ports:
+    - protocol: TCP
+      port: 1337
+  # Allow traffic from Ingress controller
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 1337
+  egress:
+  # Allow traffic to PostgreSQL
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgres
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow HTTPS for external API calls (AWS S3, etc.)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+
+---
+
+# PostgreSQL Network Policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-network-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow traffic from Strapi
+  - from:
+    - podSelector:
+        matchLabels:
+          app: strapi
+    ports:
+    - protocol: TCP
+      port: 5432
+  # Allow traffic from backup jobs
+  - from:
+    - podSelector:
+        matchLabels:
+          app: postgres-backup
+    ports:
+    - protocol: TCP
+      port: 5432
+  egress:
+  # Allow DNS resolution
+  - to: []
+    ports:
+    - protocol: UDP
+      port: 53
+  # Allow HTTPS for external resources (CDN, APIs, etc.)
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443
+
+---
+
+# AWS S3 Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: aws-s3-secret
+  namespace: default
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: "your-access-key-id"
+  AWS_SECRET_ACCESS_KEY: "your-secret-access-key"
+  AWS_REGION: "us-east-1"
+  AWS_S3_BUCKET: "your-blog-media-bucket"
+
+---
+
+# Updated Strapi ConfigMap with S3 Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: strapi-config
+  namespace: default
+data:
+  DATABASE_CLIENT: postgres
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: strapi
+  NODE_ENV: production
+  # S3 Upload Configuration
+  UPLOAD_PROVIDER: aws-s3
+  AWS_S3_BUCKET_NAME: your-blog-media-bucket
+  AWS_S3_REGION: us-east-1
+  AWS_S3_BASE_PATH: uploads
+
+---
+
+# Enhanced Strapi HPA with Scaling Behavior
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: strapi-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: strapi
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+
+---
+
+# Frontend HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: blog-frontend-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: blog-frontend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 60
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+---
+
+# Enhanced PostgreSQL Backup PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backup-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+
+---
+
+# Enhanced PostgreSQL Backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: default
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM UTC
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: postgres-backup
+        spec:
+          containers:
+          - name: postgres-backup
+            image: postgres:15-alpine
+            env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: strapi-secret
+                  key: DATABASE_PASSWORD
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: strapi-secret
+                  key: DATABASE_USERNAME
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              BACKUP_FILE="/backup/backup-$(date +%Y%m%d-%H%M%S).sql"
+              echo "Starting backup to $BACKUP_FILE"
+              pg_dump -h postgres -U $PGUSER -d strapi --verbose > $BACKUP_FILE
+              echo "Backup completed successfully"
+              
+              # Compress the backup
+              gzip $BACKUP_FILE
+              echo "Backup compressed"
+              
+              # Keep only last 7 days of backups
+              find /backup -name "backup-*.sql.gz" -mtime +7 -delete
+              echo "Old backups cleaned up"
+              
+              # List current backups
+              ls -la /backup/
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+            resources:
+              requests:
+                memory: "256Mi"
+                cpu: "250m"
+              limits:
+                memory: "512Mi"
+                cpu: "500m"
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: postgres-backup-pvc
+          restartPolicy: OnFailure
+
+---
+
+# PostgreSQL Backup to S3 CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup-s3
+  namespace: default
+spec:
+  schedule: "0 3 * * *"  # Daily at 3 AM UTC (after local backup)
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: postgres-backup-s3
+        spec:
+          containers:
+          - name: postgres-backup-s3
+            image: amazon/aws-cli:latest
+            env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-s3-secret
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-s3-secret
+                  key: AWS_SECRET_ACCESS_KEY
+            - name: AWS_DEFAULT_REGION
+              valueFrom:
+                secretKeyRef:
+                  name: aws-s3-secret
+                  key: AWS_REGION
+            command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Syncing backups to S3..."
+              aws s3 sync /backup s3://your-blog-backup-bucket/database-backups/ --delete
+              echo "S3 sync completed"
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+              readOnly: true
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: postgres-backup-pvc
+          restartPolicy: OnFailure
+
+---
+
+# PgBouncer ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+data:
+  pgbouncer.ini: |
+    [databases]
+    strapi = host=postgres port=5432 dbname=strapi
+    
+    [pgbouncer]
+    listen_port = 5432
+    listen_addr = *
+    auth_type = md5
+    auth_file = /etc/pgbouncer/userlist.txt
+    
+    pool_mode = transaction
+    server_reset_query = DISCARD ALL
+    max_client_conn = 100
+    default_pool_size = 50
+    reserve_pool_size = 10
+    log_connections = 1
+    log_disconnections = 1
+    log_pooler_errors = 1
+    stats_period = 60
+  userlist.txt: |
+    "strapi" "md5d0dc84a1e948b39e00db95c1c1f33b2e"
+
+---
+
+# Redis Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        ports:
+        - containerPort: 6379
+        command:
+        - redis-server
+        - --appendonly
+        - "yes"
+        - --maxmemory
+        - "256mb"
+        - --maxmemory-policy
+        - "allkeys-lru"
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          tcpSocket:
+            port: 6379
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          exec:
+            command:
+            - redis-cli
+            - ping
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: redis-data
+        emptyDir: {}
+
+---
+
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+  type: ClusterIP
+
+---
+
+# Development Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blog-dev
+  labels:
+    environment: dev
+
+---
+
+# Development Strapi ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: strapi-config
+  namespace: blog-dev
+data:
+  DATABASE_CLIENT: postgres
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: strapi_dev
+  NODE_ENV: development
+  STRAPI_URL: https://dev.yourblog.com
+
+---
+
+# Development Strapi Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: strapi-secret
+  namespace: blog-dev
+type: Opaque
+stringData:
+  DATABASE_USERNAME: strapi_dev
+  DATABASE_PASSWORD: dev_password_123
+
+---
+
+# Staging Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blog-staging
+  labels:
+    environment: staging
+
+---
+
+# Staging Strapi ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: strapi-config
+  namespace: blog-staging
+data:
+  DATABASE_CLIENT: postgres
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: strapi_staging
+  NODE_ENV: production
+  STRAPI_URL: https://staging.yourblog.com
+  AWS_S3_BUCKET_NAME: your-blog-staging-media
+
+---
+
+# Staging Strapi Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: strapi-secret
+  namespace: blog-staging
+type: Opaque
+stringData:
+  DATABASE_USERNAME: strapi_staging
+  DATABASE_PASSWORD: staging_secure_password_123
+
+---
+
+# Production Strapi ConfigMap (Enhanced)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: strapi-config
+  namespace: default
+data:
+  DATABASE_CLIENT: postgres
+  DATABASE_HOST: pgbouncer  # Use connection pooler in production
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: strapi
+  NODE_ENV: production
+  STRAPI_URL: https://yourblog.com
+  AWS_S3_BUCKET_NAME: your-blog-production-media
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+
+---
+
+# Resource Quota
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: compute-quota
+  namespace: default
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    persistentvolumeclaims: "10"
+
+---
+
+# Limit Range
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: limit-range
+  namespace: default
+spec:
+  limits:
+  - default:
+      cpu: "1"
+      memory: "1Gi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "128Mi"
+    type: Container

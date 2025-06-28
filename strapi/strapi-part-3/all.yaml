@@ -1,0 +1,352 @@
+# All Kubernetes manifests for Strapi + Next.js Blog Platform
+# This file contains all the final YAML resources from Part 3
+# Apply with: kubectl apply -f all.yaml
+
+---
+# PostgreSQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          env:
+            - name: POSTGRES_DB
+              value: strapi
+            - name: POSTGRES_USER
+              value: strapi
+            - name: POSTGRES_PASSWORD
+              value: strapi123  # We'll secure this with Secrets later!
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - containerPort: 5432
+              name: postgres
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # Add readiness and liveness probes for better health monitoring
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U strapi -d strapi
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U strapi -d strapi
+            initialDelaySeconds: 30
+            periodSeconds: 30
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-storage
+    spec:
+      accessModes: ["ReadWriteOnce"]
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: standard  # ⚠️ REPLACE with your actual storage class name
+
+---
+# PostgreSQL Headless Service (required by StatefulSet)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  labels:
+    app: postgres
+spec:
+  clusterIP: None  # Headless service for StatefulSet
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+
+---
+# PostgreSQL ClusterIP Service (for external access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP
+
+---
+# Strapi ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: strapi-config
+  namespace: default
+data:
+  DATABASE_CLIENT: postgres
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: strapi
+  NODE_ENV: production
+
+---
+# Strapi Secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: strapi-secret
+  namespace: default
+type: Opaque
+stringData:
+  DATABASE_USERNAME: strapi
+  DATABASE_PASSWORD: strapi123
+
+---
+# Strapi Deployment (updated for PostgreSQL)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: strapi
+  labels:
+    app: strapi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: strapi
+  template:
+    metadata:
+      labels:
+        app: strapi
+    spec:
+      containers:
+        - name: strapi
+          image: my-strapi-blog:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 1337
+          envFrom:
+            - configMapRef:
+                name: strapi-config
+            - secretRef:
+                name: strapi-secret
+          volumeMounts:
+            - name: uploads
+              mountPath: /opt/app/public/uploads
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /admin
+              port: 1337
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /admin
+              port: 1337
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: strapi-uploads-pvc
+
+---
+# Strapi Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: strapi
+  labels:
+    app: strapi
+spec:
+  selector:
+    app: strapi
+  ports:
+    - port: 1337
+      targetPort: 1337
+  type: ClusterIP
+
+---
+# Strapi Uploads PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: strapi-uploads-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard  # Use your cluster's default storage class
+
+---
+# Let's Encrypt ClusterIssuer
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-http
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: your-email@example.com
+    privateKeySecretRef:
+      name: letsencrypt-private-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+
+---
+# Ingress with TLS
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: strapi-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-http
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - your-domain.com
+      secretName: blog-tls
+  rules:
+    - host: your-domain.com
+      http:
+        paths:
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: strapi
+                port:
+                  number: 1337
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: blog-frontend
+                port:
+                  number: 3000
+
+---
+# Strapi HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: strapi-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: strapi
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+
+---
+# PostgreSQL Backup PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backup-pvc
+  namespace: default
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+# PostgreSQL Backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: default
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: postgres-backup
+            image: postgres:14
+            env:
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: strapi-secret
+                  key: DATABASE_PASSWORD
+            command:
+            - /bin/bash
+            - -c
+            - |
+              pg_dump -h postgres -U strapi strapi > /backup/backup-$(date +%Y%m%d-%H%M%S).sql
+              # Keep only last 7 days of backups
+              find /backup -name "backup-*.sql" -mtime +7 -delete
+            volumeMounts:
+            - name: backup-storage
+              mountPath: /backup
+          volumes:
+          - name: backup-storage
+            persistentVolumeClaim:
+              claimName: postgres-backup-pvc
+          restartPolicy: OnFailure
