@@ -3,6 +3,17 @@
 > **Related Article**: This code accompanies the tutorial "[High Available WordPress Deployment in Kubernetes](https://www.kubekanvas.io/blog/high-available-word-press-deployment-in-kubernetes)" published on KubeKanvas.io. The article provides a comprehensive guide to deploying a production-ready WordPress site on Kubernetes with MySQL database, persistent storage, automated backups, and ingress routing for high availability and scalability.
 
 
+## Quick Deploy
+
+**For Impatient Readers:**
+```bash
+kubectl apply -f all.yaml
+```
+
+**For quick testing in local cluster:**
+To deploy quickly in your local cluster without pressing keys on your keyboard, start with our template slightly modified for Docker Desktop cluster using this link: [High Availability WordPress Template for Deployment on Kubernetes](https://www.kubekanvas.io/templates/high-availability-wordpress-template-for-deployment-on-kubernetes)
+
+
 This directory contains all the Kubernetes YAML files needed for deploying a high-available WordPress platform with MySQL backend.
 
 ## What This Template Creates
@@ -96,15 +107,6 @@ kubectl apply -f mysql-backup-cronjob.yaml
 kubectl apply -f wordpress-backup-cronjob.yaml
 ```
 
-## Quick Deploy
-
-**For Impatient Readers:**
-```bash
-kubectl apply -f all.yaml
-```
-
-**For quick testing in local cluster:**
-To deploy quickly in your local cluster without pressing keys on your keyboard, start with our template slightly modified for Docker Desktop cluster using this link: [High Availability WordPress Template for Deployment on Kubernetes](https://www.kubekanvas.io/templates/high-availability-wordpress-template-for-deployment-on-kubernetes)
 
 **Deploy All Individual Files:**
 ```bash
