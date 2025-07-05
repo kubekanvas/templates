@@ -1,0 +1,61 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: wordpress-backup
+  labels:
+    app: wordpress-backup
+spec:
+  schedule: '0 3 * * *'
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: wordpress-backup
+        spec:
+          containers:
+            - name: wordpress-backup
+              image: alpine:latest
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  apk add --no-cache tar gzip
+
+                  BACKUP_FILE="/backup/wordpress-files-$(date +%Y%m%d-%H%M%S).tar.gz"
+                  echo "Starting WordPress files backup to $BACKUP_FILE"
+
+                  tar -czf $BACKUP_FILE -C /var/www/html \
+                    --exclude='wp-content/cache/*' \
+                    --exclude='wp-content/tmp/*' \
+                    .
+
+                  echo "WordPress files backup completed"
+
+                  # Keep only last 7 days of backups
+                  find /backup -name "wordpress-files-*.tar.gz" -mtime +7 -delete
+                  echo "Old file backups cleaned up"
+
+                  ls -la /backup/
+              volumeMounts:
+                - name: wordpress-data
+                  mountPath: /var/www/html
+                  readOnly: true
+                - name: backup-storage
+                  mountPath: /backup
+              resources:
+                requests:
+                  memory: 128Mi
+                  cpu: 100m
+                limits:
+                  memory: 256Mi
+                  cpu: 200m
+          volumes:
+            - name: wordpress-data
+              persistentVolumeClaim:
+                claimName: wordpress-pvc
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: backup-pvc
+          restartPolicy: OnFailure

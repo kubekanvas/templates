@@ -71,7 +71,7 @@ spec:
       resources:
         requests:
           storage: 10Gi
-      storageClassName: standard  # ⚠️ REPLACE with your actual storage class name
+      storageClassName: standard  # ⚠️ REPLACE with your actual storage class name use hostpath for local testing
 
 ---
 # PostgreSQL Headless Service (required by StatefulSet)

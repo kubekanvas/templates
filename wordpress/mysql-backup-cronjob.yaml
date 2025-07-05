@@ -1,0 +1,63 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mysql-backup
+  labels:
+    app: mysql-backup
+spec:
+  schedule: '0 2 * * *'
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: mysql-backup
+        spec:
+          containers:
+            - name: mysql-backup
+              image: mysql:8.0
+              env:
+                - name: MYSQL_ROOT_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: mysql-secret
+                      key: MYSQL_ROOT_PASSWORD
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -e
+                  BACKUP_FILE="/backup/mysql-backup-$(date +%Y%m%d-%H%M%S).sql"
+                  echo "Starting MySQL backup to $BACKUP_FILE"
+
+                  mysqldump -h mysql -u root -p$MYSQL_ROOT_PASSWORD \
+                    --single-transaction \
+                    --routines \
+                    --triggers \
+                    --all-databases > $BACKUP_FILE
+
+                  echo "Backup completed successfully"
+                  gzip $BACKUP_FILE
+                  echo "Backup compressed"
+
+                  # Keep only last 7 days of backups
+                  find /backup -name "mysql-backup-*.sql.gz" -mtime +7 -delete
+                  echo "Old backups cleaned up"
+
+                  # List current backups
+                  ls -la /backup/
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backup
+              resources:
+                requests:
+                  memory: 256Mi
+                  cpu: 250m
+                limits:
+                  memory: 512Mi
+                  cpu: 500m
+          volumes:
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: backup-pvc
+          restartPolicy: OnFailure
