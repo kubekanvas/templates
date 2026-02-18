@@ -1,0 +1,285 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: elk-demo1
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-1-service
+  namespace: elk-demo1
+spec:
+  selector:
+    app: app-1
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-1
+  namespace: elk-demo1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app-1
+  template:
+    metadata:
+      labels:
+        app: app-1
+    spec:
+      containers:
+        - name: app-1
+          image: nginx:latest
+          ports:
+            - containerPort: 80
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch
+  namespace: elk-demo1
+spec:
+  serviceName: elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        app: elasticsearch
+    spec:
+      containers:
+        - name: elasticsearch
+          image: docker.elastic.co/elasticsearch/elasticsearch:8.12.1
+          env:
+            - name: xpack.security.enabled
+              value: "false"
+            - name: discovery.type
+              value: single-node
+            - name: ES_JAVA_OPTS
+              value: -Xms512m -Xmx512m
+          ports:
+            - containerPort: 9200
+            - containerPort: 9300
+          volumeMounts:
+            - name: es-data
+              mountPath: /usr/share/elasticsearch/data
+  volumeClaimTemplates:
+    - metadata:
+        name: es-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 2Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch
+  namespace: elk-demo1
+spec:
+  clusterIP: None
+  ports:
+    - port: 9200
+      name: http
+    - port: 9300
+      name: transport
+  selector:
+    app: elasticsearch
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logstash-config
+  namespace: elk-demo1
+data:
+  logstash.conf: |
+    input {
+      beats {
+        port => 5044
+      }
+    }
+    output {
+      elasticsearch {
+        hosts => ["http://elasticsearch:9200"]
+        index => "app-logs-%{+YYYY.MM.dd}"
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: logstash
+  namespace: elk-demo1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: logstash
+  template:
+    metadata:
+      labels:
+        app: logstash
+    spec:
+      containers:
+        - name: logstash
+          image: docker.elastic.co/logstash/logstash:8.12.1
+          volumeMounts:
+            - name: logstash-pipeline
+              mountPath: /usr/share/logstash/pipeline
+          ports:
+            - containerPort: 5044
+      volumes:
+        - name: logstash-pipeline
+          configMap:
+            name: logstash-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kibana
+  namespace: elk-demo1
+spec:
+  selector:
+    app: kibana
+  ports:
+    - port: 5601
+      targetPort: 5601
+  type: ClusterIP
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kibana
+  namespace: elk-demo1
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kibana
+  template:
+    metadata:
+      labels:
+        app: kibana
+    spec:
+      containers:
+        - name: kibana
+          image: docker.elastic.co/kibana/kibana:8.12.1
+          env:
+            - name: ELASTICSEARCH_HOSTS
+              value: http://elasticsearch:9200
+          ports:
+            - containerPort: 5601
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: filebeat-config
+  namespace: elk-demo1
+data:
+  filebeat.yml: |
+    filebeat.inputs:
+    - type: container
+      paths:
+        - /var/log/containers/*.log
+    output.logstash:
+      hosts: ["logstash:5044"]
+
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: filebeat
+  namespace: elk-demo1
+spec:
+  selector:
+    matchLabels:
+      app: filebeat
+  template:
+    metadata:
+      labels:
+        app: filebeat
+    spec:
+      serviceAccountName: filebeat
+      containers:
+        - name: filebeat
+          image: docker.elastic.co/beats/filebeat:8.12.1
+          args:
+            - -e
+            - -strict.perms=false
+          volumeMounts:
+            - name: varlog
+              mountPath: /var/log
+            - name: filebeat-config
+              mountPath: /usr/share/filebeat/filebeat.yml
+              subPath: filebeat.yml
+          envFrom:
+            - configMapRef:
+                name: logstash-config
+      volumes:
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: filebeat-config
+          configMap:
+            name: filebeat-config
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: elk-demo-ingress
+  namespace: elk-demo1
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: elk.local
+      http:
+        paths:
+          - path: /app-1
+            pathType: Prefix
+            backend:
+              service:
+                name: app-1-service
+                port:
+                  number: 80
+    - http:
+        paths:
+          - path: /kibana
+            pathType: Prefix
+            backend:
+              service:
+                name: kibana
+                port:
+                  number: 5601
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-logstash
+spec:
+  selector:
+    app: logstash
+  ports:
+    - port: 5044
+      targetPort: 5044
