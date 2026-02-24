@@ -1,0 +1,204 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: encrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@yourdomain.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: prod-gateway
+                namespace: my-org-app
+
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: encrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@yourdomain.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: prod-gateway
+                namespace: my-org-app
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+  namespace: my-org-app
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: backend-server
+  template:
+    metadata:
+      labels:
+        app: backend-server
+    spec:
+      containers:
+        - name: container-v1
+          image: nginx:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: app-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: "8080"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: my-org-app
+data:
+  LOG_LEVEL: info
+  API_URL: https://api.internal.example.com
+  ENABLE_FEATURE_X: "true"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: my-org-app
+stringData:
+  DB_PASSWORD: super-secret-password-123
+  API_KEY: secret-token-xyz
+type: Opaque
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: my-org-app
+spec:
+  selector:
+    app: backend-server
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: "8080"
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: app-scaler
+  namespace: my-org-app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: app-deployment
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: prod-gateway
+  namespace: my-org-app
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  gatewayClassName: org-standard-gateway-class
+  listeners:
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: app.yourdomain.com
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: app-tls-secret
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: main-app-route
+  namespace: my-org-app
+spec:
+  parentRefs:
+    - name: prod-gateway
+    - name: prod-gateway
+      kind: Gateway
+      group: gateway.networking.k8s.io
+      namespace: my-org-app
+    - name: prod-gateway
+      kind: Gateway
+      group: gateway.networking.k8s.io
+      namespace: my-org-app
+  hostnames:
+    - app.yourdomain.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+    - backendRefs:
+        - name: app-service
+          port: 80
+          weight: 100
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: gateway-class
+spec:
+  controllerName: gateway.envoyproxy.io/gatewayclass-controller
+
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: encrypt-prod
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: admin@yourdomain.com
+    privateKeySecretRef:
+      name: letsencrypt-prod-account-key
+    solvers:
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: prod-gateway
+                namespace: my-org-app

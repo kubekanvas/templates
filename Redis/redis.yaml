@@ -1,0 +1,172 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: project-redis-dev
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+data:
+  redis.conf: |
+    appendonly yes
+    save 900 1
+    save 300 10
+    save 60 10000
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-credentials
+data:
+  redis-password: bXlwYXNzd29yZA==
+type: Opaque
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+spec:
+  serviceName: redis-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          command:
+            - redis-server
+            - /usr/local/etc/redis/redis.conf
+            - --requirepass
+            - $(REDIS_PASSWORD)
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: redis-password
+          ports:
+            - containerPort: 6379
+              name: redis
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+            - name: config
+              mountPath: /usr/local/etc/redis/redis.conf
+              subPath: redis.conf
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 15
+      volumes:
+        - name: config
+          configMap:
+            name: redis-config
+  volumeClaimTemplates:
+    - metadata:
+        name: redis-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-headless
+spec:
+  clusterIP: None
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: "6379"
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-backup-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: redis-backup
+spec:
+  schedule: 0 3 * * *
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: redis-backup
+              image: redis:7-alpine
+              env:
+                - name: REDIS_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: redis-credentials
+                      key: redis-password
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  # 1. Trigger network-based save to specific pod
+                  redis-cli -h redis-0.redis-headless -a "$REDIS_PASSWORD" --no-auth-warning SAVE
+                  # 2. Stream the RDB file to backup storage
+                  redis-cli -h redis-0.redis-headless -a "$REDIS_PASSWORD" --no-auth-warning --rdb /backups/redis-$(date +%Y-%m-%d).rdb
+                  # 3. Retention policy: delete older than 7 days
+                  find /backups -type f -mtime +7 -name "*.rdb" -delete
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backups
+          restartPolicy: OnFailure
+          volumes:
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: redis-backup-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-client-service
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: "6379"
+  type: ClusterIP
