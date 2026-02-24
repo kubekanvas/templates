@@ -1,1 +1,1 @@
-This repo contains templates for Kubekanvas
+This repo contains templates for deployment in kubernetes
