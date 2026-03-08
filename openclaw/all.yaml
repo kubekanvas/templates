@@ -1,0 +1,147 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openclaw
+  labels:
+    app: openclaw
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: openclaw-secrets
+  labels:
+    app: openclaw
+type: Opaque
+data:
+  # Replace these with your own base64-encoded values
+  # Generate with: echo -n 'your-value' | base64
+  OPENCLAW_TELEGRAM_TOKEN: <base64-encoded-value>
+  ANTHROPIC_API_KEY: <base64-encoded-value>
+  DISCORD_BOT_TOKEN: <base64-encoded-value>
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-config-pvc
+  labels:
+    app: openclaw
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: openclaw-workspace-pvc
+  labels:
+    app: openclaw
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: openclaw-gateway
+  labels:
+    app: openclaw
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: openclaw-gateway
+  template:
+    metadata:
+      labels:
+        app: openclaw-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: openclaw/openclaw:latest
+          ports:
+            - containerPort: 18789
+          envFrom:
+            - secretRef:
+                name: openclaw-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /root/.openclaw
+            - name: workspace
+              mountPath: /root/workspace
+          resources:
+            limits:
+              cpu: '2'
+              memory: '2Gi'
+            requests:
+              cpu: '1'
+              memory: '1Gi'
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 18789
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 18789
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: openclaw-config-pvc
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: openclaw-workspace-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: openclaw-service
+  labels:
+    app: openclaw
+spec:
+  selector:
+    app: openclaw-gateway
+  ports:
+    - name: gateway
+      port: 18789
+      targetPort: 18789
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: openclaw-ingress
+  labels:
+    app: openclaw
+  annotations:
+    cert-manager.io/cluster-issuer: 'letsencrypt-prod'
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '3600'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '3600'
+spec:
+  rules:
+    - host: openclaw.example.com # Replace with your domain
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: openclaw-service
+                port:
+                  number: 18789
