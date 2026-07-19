@@ -1,0 +1,42 @@
+services:
+  # 1. DATABASE
+  postgres:
+    image: postgres:16-alpine
+    container_name: payload-postgres
+    environment:
+      POSTGRES_USER: payload_user
+      POSTGRES_PASSWORD: supersecuredpassword
+      POSTGRES_DB: payload_prod
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payload_user -d payload_prod"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. PAYLOAD APPLICATION (Runs migrations automatically inside this container)
+  # PAYLOAD CMS APPLICATION
+  payload-cms:
+    image: kubekanvas/kubekanvas-payload:v2.0.0
+    container_name: payload-cms-app
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      IS_DOCKER_BUILD: "false"
+      # Passed directly. Your config dynamically formats these into the URI on boot!
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: payload_user
+      DB_PASSWORD: supersecuredpassword
+      DB_NAME: payload_prod
+      PAYLOAD_SECRET: 7d56a310c1f3014e0b04a80695bfbd5a7d74f20e4b85521b4a39
+    depends_on:
+      postgres:
+        condition: service_healthy
+        
+volumes:
+  postgres_data:
