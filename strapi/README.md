@@ -92,6 +92,10 @@ kubectl get ingress
 
 ```
 
+```env
+STRAPI_API_URL=https://your-strapi-instance.com
+STRAPI_TOKEN=your-api-token
+```
 
 ## 📚 Additional Resources
 
@@ -108,13 +112,6 @@ Feel free to submit issues and enhancement requests!
 This project is licensed under the MIT License.
 
 ---
-
-**Built with ❤️ for the Kubernetes and JAMstack communities**
-   ```env
-   STRAPI_API_URL=https://your-strapi-instance.com
-   STRAPI_TOKEN=your-api-token
-   ```
-
 
 ## Contributing
 
