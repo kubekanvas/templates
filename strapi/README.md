@@ -1,4 +1,6 @@
-# Strapi Blog Platform on Kubernetes
+# Deploying Strapi on Kubernetes - A complete guide with code.
+
+*A free deployment template by [KubeKanvas](https://www.kubekanvas.io) — design, deploy, and manage Kubernetes visually.*
 
 This repository contains all the Kubernetes YAML files and configurations needed to deploy a complete blog platform using Strapi CMS, Next.js frontend, and PostgreSQL database on Kubernetes.
 
@@ -126,4 +128,5 @@ This project is licensed under the MIT License.
    - Associated milestone
 4. Monitor CI/CD pipeline status
 
-**Built with ❤️ for the Kubernetes and JAMstack communities**
+---
+⭐ If this template was useful, check out [KubeKanvas](https://www.kubekanvas.io) — an AI-first visual IDE for designing and deploying Kubernetes workloads.
